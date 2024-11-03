@@ -1,51 +1,43 @@
-
-package caddyPlugin 
+package caddytlsexpr 
 
 import (
 	"context"
-	"crypto/tls"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"net/http"
-	"net/url"
-	"time"
+	// "strings"
 
-	"github.com/caddyserver/certmagic"
-	"go.uber.org/zap"
+        // "github.com/caddyserver/certmagic"
+        "go.uber.org/zap"
 
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+        "github.com/caddyserver/caddy/v2"
+        "github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+        "github.com/caddyserver/caddy/v2/modules/caddytls"
+
+	"github.com/expr-lang/expr"
+	exprVM "github.com/expr-lang/expr/vm"
 )
 
 func init() {
-	caddy.RegisterModule(PermissionByExpr{})
+       caddy.RegisterModule(PermissionByExpr{})
 }
 
+type PermissionByExprEnv struct {
 
-// PermissionByExpr determines permission for a TLS certificate by
-// making a request to an HTTP endpoint.
+}
+
+// PermissionByExpr determines permission for a TLS certificate by evaluating an expression.
 type PermissionByExpr struct {
-	// The endpoint to access. It should be a full URL.
-	// A query string parameter "domain" will be added to it,
-	// containing the domain (or IP) for the desired certificate,
-	// like so: `?domain=example.com`. Generally, this endpoint
-	// is not exposed publicly to avoid a minor information leak
-	// (which domains are serviced by your application).
-	//
-	// The endpoint must return a 200 OK status if a certificate
-	// is allowed; anything else will cause it to be denied.
-	// Redirects are not followed.
-	Endpoint string `json:"endpoint"`
+	// The expression to evaluate for permission. 
+	// It should use "domain" as a variable, for example: "domain == 'example.com'".
+	Expr string `json:"expr"`
+	Program *exprVM.Program `json:"-"`
 
-	logger   *zap.Logger
-	replacer *caddy.Replacer
+	logger *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
 func (PermissionByExpr) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "tls.permission.http",
+		ID:  "tls.permission.expr",
 		New: func() caddy.Module { return new(PermissionByExpr) },
 	}
 }
@@ -55,77 +47,53 @@ func (p *PermissionByExpr) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	if !d.Next() {
 		return nil
 	}
-	if !d.AllArgs(&p.Endpoint) {
+	if !d.AllArgs(&p.Expr) {
 		return d.ArgErr()
 	}
+	prog, err := expr.Compile(p.Expr, expr.Env(PermissionByExprEnv{}))
+	if err != nil {
+		return(err)
+	}
+	p.Program = prog
 	return nil
 }
 
 func (p *PermissionByExpr) Provision(ctx caddy.Context) error {
 	p.logger = ctx.Logger()
-	p.replacer = caddy.NewReplacer()
 	return nil
 }
 
+// CertificateAllowed evaluates the expression to determine if a certificate is allowed.
 func (p PermissionByExpr) CertificateAllowed(ctx context.Context, name string) error {
-	// run replacer on endpoint URL (for environment variables) -- return errors to prevent surprises (#5036)
-	askEndpoint, err := p.replacer.ReplaceOrErr(p.Endpoint, true, true)
+	// Evaluate the expression with the domain variable set to the requested name.
+	result, err := evaluateExpression(p.Program, name)
 	if err != nil {
-		return fmt.Errorf("preparing 'ask' endpoint: %v", err)
+		return fmt.Errorf("evaluating expression: %v", err)
 	}
 
-	askURL, err := url.Parse(askEndpoint)
-	if err != nil {
-		return fmt.Errorf("parsing ask URL: %v", err)
-	}
-	qs := askURL.Query()
-	qs.Set("domain", name)
-	askURL.RawQuery = qs.Encode()
-	askURLString := askURL.String()
-
-	var remote string
-	if chi, ok := ctx.Value(certmagic.ClientHelloInfoCtxKey).(*tls.ClientHelloInfo); ok && chi != nil {
-		remote = chi.Conn.RemoteAddr().String()
-	}
-
-	p.logger.Debug("asking permission endpoint",
-		zap.String("remote", remote),
-		zap.String("domain", name),
-		zap.String("url", askURLString))
-
-	resp, err := onDemandAskClient.Get(askURLString)
-	if err != nil {
-		return fmt.Errorf("checking %v to determine if certificate for hostname '%s' should be allowed: %v",
-			askEndpoint, name, err)
-	}
-	resp.Body.Close()
-
-	p.logger.Debug("response from permission endpoint",
-		zap.String("remote", remote),
-		zap.String("domain", name),
-		zap.String("url", askURLString),
-		zap.Int("status", resp.StatusCode))
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("%s: %w %s - non-2xx status code %d", name, ErrPermissionDenied, askEndpoint, resp.StatusCode)
+	if !result {
+		return fmt.Errorf("%s: %w - permission denied by expression", name, caddytls.ErrPermissionDenied)
 	}
 
 	return nil
 }
 
-// These perpetual values are used for on-demand TLS.
-var (
-	onDemandRateLimiter = certmagic.NewRateLimiter(0, 0)
-	onDemandAskClient   = &http.Client{
-		Timeout: 10 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return fmt.Errorf("following http redirects is not allowed")
-		},
+// evaluateExpression evaluates the given expression with the specified domain name.
+func evaluateExpression(program *exprVM.Program, domain string) (bool, error) {
+	// Create an environment with the domain variable.
+	// PermissionByExprEnv
+	env := map[string]interface{}{
+		"domain": domain,
 	}
-)
 
-// Interface guards
-var (
-	_ OnDemandPermission = (*PermissionByExpr)(nil)
-	_ caddy.Provisioner  = (*PermissionByExpr)(nil)
-)
+	output, err := expr.Run(program, env)
+	if err != nil {
+		return false, err
+	}
+
+	fmt.Println(output)
+
+	// Evaluate the expression.
+	return output.(bool), nil 
+}
+
