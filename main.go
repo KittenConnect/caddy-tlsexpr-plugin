@@ -29,10 +29,10 @@ type PermissionByExprEnv struct {
 type PermissionByExpr struct {
 	// The expression to evaluate for permission.
 	// It should use "domain" as a variable, for example: "domain == 'example.com'".
-	Expr    string          `json:"expr"`
-	Program *exprVM.Program `json:"-"`
+	Expr string `json:"expr"`
 
-	logger *zap.Logger
+	program exprVM.Program `json:"-"`
+	logger  *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -57,9 +57,9 @@ func (p *PermissionByExpr) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	if err != nil {
 		return (err)
 	}
-	p.Program = prog
+	p.program = *prog
 
-	p.logger.Info("AutoTls Compiled expression : ", zap.String("expr", p.Expr))
+	fmt.Printf("AutoTls Compiled expression : %s\n", p.Expr)
 	return nil
 }
 
@@ -71,7 +71,7 @@ func (p *PermissionByExpr) Provision(ctx caddy.Context) error {
 // CertificateAllowed evaluates the expression to determine if a certificate is allowed.
 func (p PermissionByExpr) CertificateAllowed(ctx context.Context, name string) error {
 	// Evaluate the expression with the domain variable set to the requested name.
-	result, err := expr.Run(p.Program, PermissionByExprEnv{
+	result, err := expr.Run(&p.program, PermissionByExprEnv{
 		Domain: name,
 	})
 	if err != nil {
