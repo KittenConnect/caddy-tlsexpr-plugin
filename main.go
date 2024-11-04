@@ -21,7 +21,7 @@ func init() {
 }
 
 type PermissionByExprEnv struct {
-
+    Domain string
 }
 
 // PermissionByExpr determines permission for a TLS certificate by evaluating an expression.
