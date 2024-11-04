@@ -3,6 +3,7 @@ package caddytlsexpr
 import (
 	"context"
 	"fmt"
+
 	// "strings"
 
 	// "github.com/caddyserver/certmagic"
@@ -47,14 +48,18 @@ func (p *PermissionByExpr) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	if !d.Next() {
 		return nil
 	}
+
 	if !d.AllArgs(&p.Expr) {
 		return d.ArgErr()
 	}
+
 	prog, err := expr.Compile(p.Expr, expr.Env(PermissionByExprEnv{}))
 	if err != nil {
 		return (err)
 	}
 	p.Program = prog
+
+	p.logger.Info("AutoTls Compiled expression : ", zap.String("expr", p.Expr))
 	return nil
 }
 
@@ -66,12 +71,14 @@ func (p *PermissionByExpr) Provision(ctx caddy.Context) error {
 // CertificateAllowed evaluates the expression to determine if a certificate is allowed.
 func (p PermissionByExpr) CertificateAllowed(ctx context.Context, name string) error {
 	// Evaluate the expression with the domain variable set to the requested name.
-	result, err := evaluateExpression(p.Program, name)
+	result, err := expr.Run(p.Program, PermissionByExprEnv{
+		Domain: name,
+	})
 	if err != nil {
 		return fmt.Errorf("evaluating expression: %v", err)
 	}
 
-	if !result {
+	if !result.(bool) {
 		return fmt.Errorf("%s: %w - permission denied by expression", name, caddytls.ErrPermissionDenied)
 	}
 
@@ -84,11 +91,6 @@ func evaluateExpression(program *exprVM.Program, domain string) (bool, error) {
 	// PermissionByExprEnv
 	env := map[string]interface{}{
 		"domain": domain,
-	}
-
-	output, err := expr.Run(program, env)
-	if err != nil {
-		return false, err
 	}
 
 	fmt.Println(output)
