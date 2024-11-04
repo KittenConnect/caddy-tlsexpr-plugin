@@ -1,4 +1,4 @@
-module github.com/itzwam/caddy-autotls-expr
+module github.com/kittenconnect/caddy-tlsexpr-plugin 
 
 go 1.23.2
 
