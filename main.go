@@ -1,34 +1,34 @@
-package caddytlsexpr 
+package caddytlsexpr
 
 import (
 	"context"
 	"fmt"
 	// "strings"
 
-        // "github.com/caddyserver/certmagic"
-        "go.uber.org/zap"
+	// "github.com/caddyserver/certmagic"
+	"go.uber.org/zap"
 
-        "github.com/caddyserver/caddy/v2"
-        "github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-        "github.com/caddyserver/caddy/v2/modules/caddytls"
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddytls"
 
 	"github.com/expr-lang/expr"
 	exprVM "github.com/expr-lang/expr/vm"
 )
 
 func init() {
-       caddy.RegisterModule(PermissionByExpr{})
+	caddy.RegisterModule(PermissionByExpr{})
 }
 
 type PermissionByExprEnv struct {
-    Domain string
+	Domain string
 }
 
 // PermissionByExpr determines permission for a TLS certificate by evaluating an expression.
 type PermissionByExpr struct {
-	// The expression to evaluate for permission. 
+	// The expression to evaluate for permission.
 	// It should use "domain" as a variable, for example: "domain == 'example.com'".
-	Expr string `json:"expr"`
+	Expr    string          `json:"expr"`
 	Program *exprVM.Program `json:"-"`
 
 	logger *zap.Logger
@@ -52,7 +52,7 @@ func (p *PermissionByExpr) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	}
 	prog, err := expr.Compile(p.Expr, expr.Env(PermissionByExprEnv{}))
 	if err != nil {
-		return(err)
+		return (err)
 	}
 	p.Program = prog
 	return nil
@@ -94,6 +94,5 @@ func evaluateExpression(program *exprVM.Program, domain string) (bool, error) {
 	fmt.Println(output)
 
 	// Evaluate the expression.
-	return output.(bool), nil 
+	return output.(bool), nil
 }
-
