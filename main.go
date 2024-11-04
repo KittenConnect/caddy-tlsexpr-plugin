@@ -84,17 +84,3 @@ func (p PermissionByExpr) CertificateAllowed(ctx context.Context, name string) e
 
 	return nil
 }
-
-// evaluateExpression evaluates the given expression with the specified domain name.
-func evaluateExpression(program *exprVM.Program, domain string) (bool, error) {
-	// Create an environment with the domain variable.
-	// PermissionByExprEnv
-	env := map[string]interface{}{
-		"domain": domain,
-	}
-
-	fmt.Println(output)
-
-	// Evaluate the expression.
-	return output.(bool), nil
-}
