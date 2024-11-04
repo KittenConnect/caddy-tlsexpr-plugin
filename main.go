@@ -59,7 +59,6 @@ func (p *PermissionByExpr) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	}
 	p.program = *prog
 
-	fmt.Printf("AutoTls Compiled expression : %s\n", p.Expr)
 	return nil
 }
 
@@ -78,9 +77,16 @@ func (p PermissionByExpr) CertificateAllowed(ctx context.Context, name string) e
 		return fmt.Errorf("evaluating expression: %v", err)
 	}
 
-	if !result.(bool) {
-		return fmt.Errorf("%s: %w - permission denied by expression", name, caddytls.ErrPermissionDenied)
+	switch v := result.(type) {
+	case bool:
+		if v {
+			return nil
+		} else {
+			return fmt.Errorf("%s: %w - permission denied by expression", name, caddytls.ErrPermissionDenied)
+		}
+		// default:
+		// 	// no match; here v has the same type as i
 	}
 
-	return nil
+	return fmt.Errorf("%s: %w - Unknown type %T for expression result - permission denied by expression", name, caddytls.ErrPermissionDenied, result)
 }
