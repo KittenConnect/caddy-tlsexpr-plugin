@@ -31,7 +31,7 @@ type PermissionByExpr struct {
 	// It should use "domain" as a variable, for example: "domain == 'example.com'".
 	Expr string `json:"expr"`
 
-	program exprVM.Program `json:"-"`
+	program *exprVM.Program `json:"-"`
 	logger  *zap.Logger
 }
 
@@ -57,7 +57,7 @@ func (p *PermissionByExpr) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	if err != nil {
 		return (err)
 	}
-	p.program = *prog
+	p.program = prog
 
 	return nil
 }
@@ -70,23 +70,26 @@ func (p *PermissionByExpr) Provision(ctx caddy.Context) error {
 // CertificateAllowed evaluates the expression to determine if a certificate is allowed.
 func (p PermissionByExpr) CertificateAllowed(ctx context.Context, name string) error {
 	// Evaluate the expression with the domain variable set to the requested name.
-	result, err := expr.Run(&p.program, PermissionByExprEnv{
+	result, err := expr.Run(p.program, PermissionByExprEnv{
 		Domain: name,
 	})
+
+	// fmt.Printf("%s", )
+
 	if err != nil {
 		return fmt.Errorf("evaluating expression: %v", err)
 	}
 
 	switch v := result.(type) {
 	case bool:
-		if v {
-			return nil
-		} else {
+		if !v {
 			return fmt.Errorf("%s: %w - permission denied by expression", name, caddytls.ErrPermissionDenied)
 		}
-		// default:
-		// 	// no match; here v has the same type as i
+
+	default:
+		return fmt.Errorf("%s: %w - Unknown type %T for expression result - permission denied by expression", name, caddytls.ErrPermissionDenied, v)
+		// no match; here v has the same type as i
 	}
 
-	return fmt.Errorf("%s: %w - Unknown type %T for expression result - permission denied by expression", name, caddytls.ErrPermissionDenied, result)
+	return nil
 }
