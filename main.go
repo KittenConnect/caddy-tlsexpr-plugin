@@ -22,7 +22,8 @@ func init() {
 }
 
 type PermissionByExprEnv struct {
-	domain string
+	Domain string `expr:"domain"`
+	// Remote string `expr:"domain"` // UseLess
 }
 
 // PermissionByExpr determines permission for a TLS certificate by evaluating an expression.
@@ -85,7 +86,7 @@ func (p PermissionByExpr) CertificateAllowed(ctx context.Context, name string) e
 
 	// Evaluate the expression with the domain variable set to the requested name.
 	result, err := expr.Run(p.program, PermissionByExprEnv{
-		domain: name,
+		Domain: name,
 	})
 
 	// fmt.Printf("%s", )
