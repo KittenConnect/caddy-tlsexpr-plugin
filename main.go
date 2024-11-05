@@ -29,9 +29,9 @@ type PermissionByExprEnv struct {
 type PermissionByExpr struct {
 	// The expression to evaluate for permission.
 	// It should use "domain" as a variable, for example: "domain == 'example.com'".
-	Expr string `json:"expr"`
+	// Expr string `json:"expr"`
 
-	program *exprVM.Program `json:"-"`
+	program *exprVM.Program
 	logger  *zap.Logger
 }
 
@@ -49,13 +49,14 @@ func (p *PermissionByExpr) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		return nil
 	}
 
-	if !d.AllArgs(&p.Expr) {
+	var e string
+	if !d.AllArgs(&e) {
 		return d.ArgErr()
 	}
 
-	prog, err := expr.Compile(p.Expr, expr.Env(PermissionByExprEnv{}))
+	prog, err := expr.Compile(e, expr.Env(PermissionByExprEnv{}))
 	if err != nil {
-		return (err)
+		return err
 	}
 	p.program = prog
 
