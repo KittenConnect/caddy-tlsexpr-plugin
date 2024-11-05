@@ -8,7 +8,12 @@ CAddy2 Plugin allowing usage of expr in auto_tls permission
 
                 # Or us Go-Expr
                 permission expr <<EOF
-                    true
+                    /* Domain == "example.com" */
+                    /* domain is subdomain of these lists */
+                    any(
+                        [".example.com", ".example.net"],
+                        hasSuffix(domain, #)
+                        )
                 EOF
         }
 
