@@ -24,6 +24,12 @@ func init() {
 type PermissionByExprEnv struct {
 	Domain string `expr:"domain"`
 	// Remote string `expr:"domain"` // UseLess
+
+	logger *zap.Logger
+}
+
+func (env *PermissionByExprEnv) Info(msg string) {
+	env.logger.Info(msg)
 }
 
 // PermissionByExpr determines permission for a TLS certificate by evaluating an expression.
@@ -70,7 +76,8 @@ func (p *PermissionByExpr) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 func (p *PermissionByExpr) Provision(ctx caddy.Context) error {
-	p.logger = ctx.Logger()
+	p.logger = ctx.Logger().With(zap.String("autotls_expr", p.Expr))
+
 	return nil
 }
 
@@ -87,12 +94,14 @@ func (p PermissionByExpr) CertificateAllowed(ctx context.Context, name string) e
 	// Evaluate the expression with the domain variable set to the requested name.
 	result, err := expr.Run(p.program, PermissionByExprEnv{
 		Domain: name,
+
+		logger: p.logger.With(zap.String("domain", name)),
 	})
 
 	// fmt.Printf("%s", )
 
 	if err != nil {
-		return fmt.Errorf("evaluating expression: %v", err)
+		return fmt.Errorf("evaluating expression: %w", err)
 	}
 
 	switch v := result.(type) {
