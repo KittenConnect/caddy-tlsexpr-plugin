@@ -22,14 +22,14 @@ func init() {
 }
 
 type PermissionByExprEnv struct {
-	Domain string
+	domain string
 }
 
 // PermissionByExpr determines permission for a TLS certificate by evaluating an expression.
 type PermissionByExpr struct {
 	// The expression to evaluate for permission.
 	// It should use "domain" as a variable, for example: "domain == 'example.com'".
-	// Expr string `json:"expr"`
+	Expr string `json:"expr"`
 
 	program *exprVM.Program
 	logger  *zap.Logger
@@ -49,16 +49,21 @@ func (p *PermissionByExpr) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		return nil
 	}
 
-	var e string
-	if !d.AllArgs(&e) {
+	if !d.AllArgs(&p.Expr) {
 		return d.ArgErr()
 	}
 
-	prog, err := expr.Compile(e, expr.Env(PermissionByExprEnv{}))
+	prog, err := expr.Compile(p.Expr, expr.Env(PermissionByExprEnv{}))
 	if err != nil {
 		return err
 	}
 	p.program = prog
+
+	if p.logger != nil {
+		p.logger.Info("AutoTLS Compiled expr for later usage", zap.String("expr", p.Expr))
+	} else {
+		fmt.Printf("AutoTLS Compiled expr for later usage: %s", p.Expr)
+	}
 
 	return nil
 }
@@ -70,9 +75,17 @@ func (p *PermissionByExpr) Provision(ctx caddy.Context) error {
 
 // CertificateAllowed evaluates the expression to determine if a certificate is allowed.
 func (p PermissionByExpr) CertificateAllowed(ctx context.Context, name string) error {
+	if p.program == nil {
+		prog, err := expr.Compile(p.Expr, expr.Env(PermissionByExprEnv{}))
+		if err != nil {
+			return err
+		}
+		p.program = prog
+	}
+
 	// Evaluate the expression with the domain variable set to the requested name.
 	result, err := expr.Run(p.program, PermissionByExprEnv{
-		Domain: name,
+		domain: name,
 	})
 
 	// fmt.Printf("%s", )
@@ -83,7 +96,9 @@ func (p PermissionByExpr) CertificateAllowed(ctx context.Context, name string) e
 
 	switch v := result.(type) {
 	case bool:
-		if !v {
+		if v {
+			return nil
+		} else {
 			return fmt.Errorf("%s: %w - permission denied by expression", name, caddytls.ErrPermissionDenied)
 		}
 
@@ -92,5 +107,5 @@ func (p PermissionByExpr) CertificateAllowed(ctx context.Context, name string) e
 		// no match; here v has the same type as i
 	}
 
-	return nil
+	// Should never go here
 }
